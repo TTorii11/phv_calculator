@@ -26,7 +26,6 @@ def hash_pw(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 def register_user(username: str, password: str, full_name: str) -> bool:
-    # Ellenőrizzük, hogy létezik-e már a felhasználó
     existing = supabase.table("users").select("username").eq("username", username).execute()
     if existing.data:
         return False
@@ -51,11 +50,62 @@ def get_user_measurements(username: str):
     res = supabase.table("measurements").select("*").eq("username", username).order("created_at", desc=True).execute()
     return res.data
 
+def delete_measurements(ids: list):
+    for record_id in ids:
+        supabase.table("measurements").delete().eq("id", record_id).execute()
+
+def render_phv_result(res: dict):
+    """Közös megjelenítő függvény az eredményekhez és a grafikonhoz."""
+    st.markdown("---")
+    st.subheader(f"Eredmények: {res['player_name']}")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Kronológiai kor", f"{res['chronological_age']:.2f} év")
+    c2.metric("Becsült biológiai kor", f"{res['estimated_bio_age']:.2f} év", f"{res['biological_diff']:+.2f} év")
+    c3.metric("Maturity Offset", f"{res['offset_val']:+.2f} év")
+    c4.metric("PHV életkor", f"{res['predicted_phv_age']:.2f} év")
+
+    st.markdown(f"**Biológiai érési státusz:** :{res['status_color']}[**{res['timing_status']}**]")
+
+    offset = res["offset_val"]
+    if offset < -1.0:
+        st.write(f"📌 A játékos **{abs(offset):.1f} évvel** van a növekedési csúcs előtt (Pre-PHV szakasz). Aerob állóképesség, alap koordináció és technika fejlesztése ideális.")
+    elif -1.0 <= offset <= 1.0:
+        st.write("⚡ **A játékos épp a legintenzívebb növekedési fázisban van (Circa-PHV)!** Fokozott sérülésveszély (túlterheléses panaszok, Osgood-Schlatter, átmeneti koordinációs visszaesés).")
+    else:
+        st.write(f"🚀 A játékos **{offset:.1f} évvel** már túljutott a csúcson (Post-PHV). Megkezdhető a specifikus erő- és hipertrófia-edzés.")
+
+    fig = go.Figure()
+    fig.add_trace(go.Indicator(
+        mode="gauge+number",
+        value=offset,
+        title={'text': f"{res['player_name']} – PHV Offset (év a növekedési csúcstól)"},
+        gauge={
+            'axis': {'range': [-3, 3]},
+            'bar': {'color': "darkblue"},
+            'steps': [
+                {'range': [-3, -1], 'color': "lightblue"},
+                {'range': [-1, 1], 'color': "orange"},
+                {'range': [1, 3], 'color': "lightgreen"}
+            ],
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': offset
+            }
+        }
+    ))
+    fig.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20))
+    st.plotly_chart(fig, use_container_width=True)
+
 # --- SESSION STATE ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.full_name = ""
+
+if "last_result" not in st.session_state:
+    st.session_state.last_result = None
 
 # --- HITELOSÍTÁSI FELÜLET (HA NINCS BELÉPVE) ---
 if not st.session_state.logged_in:
@@ -100,6 +150,7 @@ st.sidebar.markdown(f"👤 **{st.session_state.full_name}**")
 st.sidebar.caption(f"Felhasználó: `{st.session_state.username}`")
 if st.sidebar.button("Kijelentkezés"):
     st.session_state.logged_in = False
+    st.session_state.last_result = None
     st.rerun()
 
 st.title("Biológiai Érés & PHV Becslés")
@@ -173,10 +224,12 @@ with tab_calc:
                 timing_status = "Átlagos (On-Time)"
                 status_color = "green"
 
+            clean_name = player_name.strip() if player_name.strip() else "Névtelen játékos"
+
             # Mentés Supabase-be
             record = {
                 "username": st.session_state.username,
-                "player_name": player_name if player_name else "Névtelen játékos",
+                "player_name": clean_name,
                 "gender": gender,
                 "birth_date": str(birth_date),
                 "measure_date": str(measure_date),
@@ -191,56 +244,45 @@ with tab_calc:
             save_measurement(record)
             st.toast("✅ Mérés elmentve az adatbázisba!")
 
-            st.markdown("---")
-            st.subheader(f"Eredmények: {record['player_name']}")
+            # Eltároljuk a session_state-ben, hogy ne tűnjön el a grafikon!
+            st.session_state.last_result = {
+                **record,
+                "estimated_bio_age": round(estimated_bio_age, 2),
+                "biological_diff": round(biological_diff, 2),
+                "status_color": status_color
+            }
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Kronológiai kor", f"{chronological_age:.2f} év")
-            c2.metric("Becsült biológiai kor", f"{estimated_bio_age:.2f} év", f"{biological_diff:+.2f} év")
-            c3.metric("Maturity Offset", f"{offset:+.2f} év")
-            c4.metric("PHV életkor", f"{predicted_phv_age:.2f} év")
-
-            st.markdown(f"**Biológiai érési státusz:** :{status_color}[**{timing_status}**]")
-
-            fig = go.Figure()
-            fig.add_trace(go.Indicator(
-                mode = "gauge+number",
-                value = offset,
-                title = {'text': "PHV Offset (év a növekedési csúcstól)"},
-                gauge = {
-                    'axis': {'range': [-3, 3]},
-                    'bar': {'color': "darkblue"},
-                    'steps': [
-                        {'range': [-3, -1], 'color': "lightblue"},
-                        {'range': [-1, 1], 'color': "orange"},
-                        {'range': [1, 3], 'color': "lightgreen"}
-                    ],
-                    'threshold': {
-                        'line': {'color': "red", 'width': 4},
-                        'thickness': 0.75,
-                        'value': offset
-                    }
-                }
-            ))
-            fig.update_layout(height=280, margin=dict(l=20, r=20, t=40, b=20))
-            st.plotly_chart(fig, use_container_width=True)
+    # Ha van kiszámolt eredmény a munkamenetben, mindig megjelenítjük
+    if st.session_state.last_result:
+        render_phv_result(st.session_state.last_result)
 
 with tab_history:
     st.subheader("Korábban rögzített játékosok")
     history = get_user_measurements(st.session_state.username)
+    
     if history:
         df = pd.DataFrame(history)
+        
+        # Kiszámoljuk a biológiai életkort és az eltérést minden sorra (visszamenőleg is!)
+        avg_phv_series = df["gender"].apply(lambda g: 13.8 if g == "Fiú" else 12.0)
+        df["biological_diff"] = (avg_phv_series - df["predicted_phv_age"]).round(2)
+        df["estimated_bio_age"] = (df["chronological_age"] + df["biological_diff"]).round(2)
+
         display_cols = {
             "player_name": "Játékos",
             "measure_date": "Mérés dátuma",
-            "chronological_age": "Életkor (év)",
+            "gender": "Nem",
+            "chronological_age": "Kronológiai kor (év)",
+            "estimated_bio_age": "Biológiai kor (év)",
+            "biological_diff": "Eltérés (év)",
             "offset_val": "PHV Offset (év)",
             "predicted_phv_age": "Becsült PHV kor",
-            "timing_status": "Státusz",
+            "timing_status": "Érési státusz",
             "standing_height": "Magasság (cm)",
             "sitting_height": "Ülőmagasság (cm)",
             "weight": "Súly (kg)"
         }
+        
         df_filtered = df[list(display_cols.keys())].rename(columns=display_cols)
         st.dataframe(df_filtered, use_container_width=True, hide_index=True)
         
@@ -251,5 +293,49 @@ with tab_history:
             file_name="phv_meresek.csv",
             mime="text/csv"
         )
+
+        st.markdown("---")
+        
+        # --- KORÁBBI GRAFIKON ÚJRAMEGJELENÍTÉSE ---
+        st.subheader("📈 Korábbi mérés grafikonjának megtekintése")
+        record_options = {
+            f"{row['player_name']} ({row['measure_date']}) – Bio kor: {row['estimated_bio_age']} év": row 
+            for _, row in df.iterrows()
+        }
+        selected_label = st.selectbox("Válassz egy játékost a listából:", options=list(record_options.keys()))
+        if selected_label:
+            sel_row = record_options[selected_label]
+            color = "red" if sel_row["biological_diff"] > 0.5 else ("blue" if sel_row["biological_diff"] < -0.5 else "green")
+            render_phv_result({
+                "player_name": sel_row["player_name"],
+                "chronological_age": sel_row["chronological_age"],
+                "estimated_bio_age": sel_row["estimated_bio_age"],
+                "biological_diff": sel_row["biological_diff"],
+                "offset_val": sel_row["offset_val"],
+                "predicted_phv_age": sel_row["predicted_phv_age"],
+                "timing_status": sel_row["timing_status"],
+                "status_color": color
+            })
+
+        st.markdown("---")
+
+        # --- MÉRÉSEK TÖRLÉSE ---
+        with st.expander("🗑️ Hibás vagy felesleges mérések törlése"):
+            delete_options = {
+                f"#{row['id']} - {row['player_name']} ({row['measure_date']})": row['id'] 
+                for _, row in df.iterrows()
+            }
+            selected_to_delete = st.multiselect(
+                "Válaszd ki a törölni kívánt méréseket:",
+                options=list(delete_options.keys())
+            )
+            if st.button("Kijelölt mérések végleges törlése", type="primary"):
+                if selected_to_delete:
+                    ids_to_remove = [delete_options[label] for label in selected_to_delete]
+                    delete_measurements(ids_to_remove)
+                    st.success("A kijelölt méréseket sikeresen töröltük!")
+                    st.rerun()
+                else:
+                    st.warning("Először válassz ki legalább egy mérést a listából!")
     else:
         st.info("Még nincs elmentett mérésed.")
