@@ -137,7 +137,7 @@ def render_phv_result(res: dict):
                 f"🌱 **Pre-PHV szakasz ({abs(offset):.1f} évvel a csúcs előtt)**\n\n"
                 "**Edzésmódszertani fókusz (Neurális adaptáció & Mozgásműveltség):** "
                 "Ebben a korban az idegrendszer rendkívül fogékony! Az alapvető motoros kontroll kulcsa az **erőfejlesztés korai elkezdése** "
-                "(saját testsúlyos alapmozgások, medicinlabda, kézisúlyzók, helyes guggolás/kitörés/húzás-tolás minták megtanulása). "
+                "(saját testsúlyos alapmozgások, helyes guggolás/kitörés/húzás-tolás minták megtanulása). "
                 "Nem az izomtömeg-növelés (hipertrófia), hanem az **ideg-izom koordináció, a robbanékonyság, a sebesség és a csontozat felkészítése** a cél, "
                 "rövid, minőségi (10-20 perces) blokkokban, korai túl-specializáció helyett sokoldalú mozgással."
             )
