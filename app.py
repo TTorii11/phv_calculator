@@ -450,7 +450,7 @@ with tab_history:
             if selected_label:
                 sel_row = record_options[selected_label]
                 st.markdown("---")
-               render_phv_result({
+                render_phv_result({
                     "player_name": sel_row["player_name"],
                     "chronological_age": sel_row["chronological_age"],
                     "estimated_bio_age": sel_row["estimated_bio_age"],
