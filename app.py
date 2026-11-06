@@ -110,7 +110,7 @@ def delete_measurements(ids: list):
     for record_id in ids:
         supabase.table("measurements").delete().eq("id", record_id).execute()
 
-def render_phv_result(res: dict):
+def render_phv_result(res: dict, key_suffix: str = ""):
     """Közös, dizájnos megjelenítő függvény az eredményekhez és a grafikonhoz."""
     st.markdown("### 📊 Kiértékelés: **" + res['player_name'] + "**")
 
@@ -186,7 +186,7 @@ def render_phv_result(res: dict):
             }
         ))
         fig.update_layout(height=260, margin=dict(l=25, r=25, t=45, b=15), paper_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key=f"phv_chart_{key_suffix}")
 
 # --- SESSION STATE ---
 if "logged_in" not in st.session_state:
@@ -365,7 +365,7 @@ with tab_calc:
     if st.session_state.last_result:
         st.write("")
         with st.container(border=True):
-            render_phv_result(st.session_state.last_result)
+            render_phv_result(st.session_state.last_result, key_suffix="tab1")
 
 # --- 2. FÜL: KORÁBBI MÉRÉSEK & CSAPAT ÁTTEKINTÉS ---
 with tab_history:
@@ -450,7 +450,7 @@ with tab_history:
             if selected_label:
                 sel_row = record_options[selected_label]
                 st.markdown("---")
-                render_phv_result({
+               render_phv_result({
                     "player_name": sel_row["player_name"],
                     "chronological_age": sel_row["chronological_age"],
                     "estimated_bio_age": sel_row["estimated_bio_age"],
@@ -461,7 +461,7 @@ with tab_history:
                     "standing_height": sel_row["standing_height"],
                     "sitting_height": sel_row["sitting_height"],
                     "weight": sel_row["weight"]
-                })
+                }, key_suffix="tab2")
 
         # --- MÉRÉSEK TÖRLÉSE ---
         with st.expander("🗑️ Hibás vagy felesleges mérések törlése"):
